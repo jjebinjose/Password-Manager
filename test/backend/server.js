@@ -6,6 +6,7 @@ const cors = require('cors');
 const bodyParser = require('body-parser');
 const { MongoClient, ObjectId } = require('mongodb');
 const crypto = require('crypto');
+const nodemailer = require('nodemailer'); // Import nodemailer for email functionality
 
 // Initialize the secret key from the environment variable
 const algorithm = 'aes-256-cbc';
@@ -15,6 +16,37 @@ if (!secretKey) {
     process.exit(1); // Exit the app if the key is not found
 }
 console.log(`Secret Key: ${secretKey}`);
+
+
+const transporter = nodemailer.createTransport({
+    service: 'gmail',
+    port: 587,
+    secure: false,
+    auth: {
+        user: process.env.EMAIL_USER,
+        pass: process.env.EMAIL_PASS,
+    },
+    tls: {
+        rejectUnauthorized: false
+    },
+    connectionTimeout: 300000, // 10 seconds timeout
+    socketTimeout: 30000,
+    greetingTimeout: 30000,
+});
+
+
+
+
+transporter.verify((error, success) => {
+    if (error) {
+        console.error('Error with transporter verification:', error);
+    } else {
+        console.log('Server is ready to take our messages:', success);
+    }
+});
+
+const verificationCodes = {}; // To store temporary verification codes for users
+
 
 // Encrypt function
 const encrypt = (text) => {
@@ -64,6 +96,62 @@ client.connect().then(() => {
     console.log('Connected to MongoDB');
 }).catch(err => {
     console.error('Failed to connect to MongoDB', err);
+});
+
+// Function to send verification email
+const sendVerificationEmail = (email, code) => {
+    console.log(`Sending email to ${email} with code ${code}`);
+
+    const mailOptions = {
+        from: process.env.EMAIL_USER,
+        to: email,
+        subject: 'Password Copy Verification Code',
+        text: `Your verification code is ${code}. Please enter it to proceed with copying the password.`,
+    };
+
+    return transporter.sendMail(mailOptions)
+        .then(info => {
+            console.log('Email sent:', info.response);
+        })
+        .catch(error => {
+            console.error('Failed to send email:', error);
+            console.error('Error details:', error.response || error.message); // Additional logging
+            throw new Error('Error sending verification email');
+        });
+};
+
+let ogcode = 1221;
+
+// Endpoint to request verification code
+app.post('/request-verification', (req, res) => {
+    const {email} = req.body;
+    console.log(email)
+    // const email = process.env.DEFAULT_EMAIL; // Use the static email address
+    const verificationCode = Math.floor(100000 + Math.random() * 900000).toString(); // Generate 6-digit code
+    ogcode = verificationCode;
+    // Log the generated verification code for troubleshooting (remove in production)
+    console.log(`Generated verification code: ${verificationCode}`);
+console.log(process.env.EMAIL_USER,process.env.EMAIL_PASS,process.env.DEFAULT_EMAIL)
+    verificationCodes[email] = verificationCode;
+
+    sendVerificationEmail(email, verificationCode)
+        .then(() => res.json({ success: true, message: 'Verification code sent' }))
+        .catch((error) => {
+            console.error('Error sending verification email:', error);
+            res.status(500).json({ success: false, message: 'Failed to send verification code' });
+        });
+});
+
+// Endpoint to verify the code
+app.post('/verify-code', (req, res) => {
+    const { email, code } = req.body;
+    if (ogcode === code) {
+        console.log('whdhwjd')
+        delete verificationCodes[email]; // Clear the code once used
+        res.json({ success: true });
+    } else {
+        res.status(400).json({ success: false, message: 'Invalid verification code' });
+    }
 });
 
 // GET endpoint to retrieve all passwords
