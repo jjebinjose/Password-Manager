@@ -9,7 +9,7 @@ const crypto = require('crypto');
 const nodemailer = require('nodemailer'); // Import nodemailer for email functionality
 
 // Initialize the secret key from the environment variable
-const algorithm = 'aes-256-cbc';
+const algorithm = 'aes-256cbc';
 const secretKey = process.env.SECRET_KEY; // Get this from .env file
 if (!secretKey) {
     console.error('Secret key not found');
